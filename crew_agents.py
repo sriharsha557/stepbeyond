@@ -15,10 +15,7 @@ class StepBeyondCrew:
         
         Args:
             groq_api_key: Groq API key
-            model_name: Groq model to use. Options:
-                       - groq/llama-3.3-70b-versatile (recommended)
-                       - groq/llama-3.1-8b-instant (faster, lighter)
-                       - groq/gemma2-9b-it (alternative)
+            model_name: Groq model to use
         """
         self.groq_api_key = groq_api_key
         self.model_name = model_name
@@ -27,7 +24,7 @@ class StepBeyondCrew:
         self.rag = RAGPipeline()
         self.rag.load_index()  # Load existing index if available
         
-        # Initialize Groq LLM with error handling
+        # Initialize Groq LLM - Updated for CrewAI 0.11.0 compatibility
         try:
             self.llm = LLM(
                 model=model_name,
@@ -52,7 +49,7 @@ class StepBeyondCrew:
     def _setup_agents(self):
         """Setup CrewAI agents"""
         
-        # Retriever Agent - Responsible for finding relevant information
+        # Retriever Agent
         self.retriever_agent = Agent(
             role='Information Retriever',
             goal='Find the most relevant information from the knowledge base to answer student queries about studying abroad',
@@ -65,7 +62,7 @@ class StepBeyondCrew:
             llm=self.llm
         )
         
-        # Answer Agent - Responsible for generating comprehensive answers
+        # Answer Agent
         self.answer_agent = Agent(
             role='Career Counselor',
             goal='Provide comprehensive, step-by-step guidance to Indian students planning to study abroad',
@@ -135,9 +132,7 @@ class StepBeyondCrew:
         )
 
     def process_query(self, user_query: str) -> str:
-        """
-        Process user query through the crew workflow
-        """
+        """Process user query through the crew workflow"""
         try:
             logger.info(f"Processing query: {user_query}")
             
@@ -145,7 +140,6 @@ class StepBeyondCrew:
             context = self.rag.get_context_for_query(user_query, max_chunks=5)
             
             if not context or context == "No relevant information found.":
-                # If no relevant context found, still try to answer with general knowledge
                 context = "No specific information found in knowledge base. Please use your general knowledge about studying abroad for Indian students."
                 logger.warning("No relevant context found in knowledge base")
             
@@ -173,10 +167,7 @@ class StepBeyondCrew:
             return f"I apologize, but I encountered an error while processing your query. Please try rephrasing your question or contact support. Error: {str(e)}"
 
     def quick_answer(self, user_query: str) -> str:
-        """
-        Generate a quick answer using just the RAG context and LLM
-        (Alternative method if CrewAI has issues)
-        """
+        """Generate a quick answer using just the RAG context and LLM"""
         try:
             logger.info(f"Generating quick answer for: {user_query}")
             
@@ -208,13 +199,7 @@ class StepBeyondCrew:
 
 # Utility functions
 def setup_crew(groq_api_key: str = None, model_name: str = None) -> StepBeyondCrew:
-    """
-    Setup and return StepBeyond crew instance
-    
-    Args:
-        groq_api_key: Groq API key (if None, will get from environment)
-        model_name: Model to use (if None, will use default)
-    """
+    """Setup and return StepBeyond crew instance"""
     if not groq_api_key:
         groq_api_key = os.getenv('GROQ_API_KEY')
         
@@ -226,33 +211,3 @@ def setup_crew(groq_api_key: str = None, model_name: str = None) -> StepBeyondCr
         model_name = os.getenv('LLM_MODEL', 'groq/llama-3.3-70b-versatile')
     
     return StepBeyondCrew(groq_api_key, model_name)
-
-if __name__ == "__main__":
-    # Example usage
-    import dotenv
-    dotenv.load_dotenv()
-    
-    # Initialize crew
-    crew = setup_crew()
-    
-    # Test queries
-    test_queries = [
-        "What are the requirements for a student visa to Canada?",
-        "How do I apply for universities in the UK?",
-        "What scholarships are available for Indian students in the US?"
-    ]
-    
-    for query in test_queries:
-        print(f"\n{'='*50}")
-        print(f"Query: {query}")
-        print(f"{'='*50}")
-        
-        # Try both methods
-        try:
-            answer = crew.process_query(query)
-            print("CrewAI Answer:")
-            print(answer)
-        except:
-            print("CrewAI failed, trying quick answer:")
-            answer = crew.quick_answer(query)
-            print(answer)
