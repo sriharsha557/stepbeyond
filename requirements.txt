@@ -4,16 +4,19 @@ python-multipart==0.0.6
 pydantic==2.5.0
 python-dotenv==1.0.0
 
-# AI/ML Libraries - Using older stable versions for Python 3.13 compatibility
+# AI/ML Libraries - Compatible versions for crewai 0.11.0
 crewai==0.11.0
-langchain==0.1.0
+langchain==0.0.351
 langchain-community==0.0.20
 sentence-transformers==2.2.2
 
-# Vector search - Use older compatible version
+# OpenAI - Compatible with crewai 0.11.0 (requires openai < 0.29.0)
+openai==0.28.1
+
+# Vector search
 faiss-cpu==1.7.4
 
-# Document Processing - Use compatible versions
+# Document Processing
 PyPDF2==3.0.1
 numpy==1.24.3
 
@@ -22,6 +25,5 @@ requests==2.31.0
 packaging==23.1
 typing-extensions==4.8.0
 
-# Add these to help with compatibility
-openai==1.3.0
+# Additional dependencies that crewai might need
 tiktoken==0.5.2
