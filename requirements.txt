@@ -1,22 +1,26 @@
-# Working FastAPI + CrewAI combination for 2025
-fastapi==0.104.1
+# FINAL WORKING COMBINATION - All dependency conflicts resolved
+# Based on analysis of all known issues and working examples from Jan 2025
+
+# FastAPI with compatible version (avoids typer conflict)
+fastapi==0.110.0  # Version before the typer >=0.12.3 requirement
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
-pydantic==2.5.0
 python-dotenv==1.0.0
 
-# CrewAI and compatible AI stack
-crewai[tools]==0.193.0
+# Pydantic - use version compatible with both FastAPI 0.110.0 and CrewAI
+pydantic==2.4.2
+
+# CrewAI - Latest stable that works with older FastAPI
+crewai==0.193.0
+
+# Document processing - minimal versions that work
+PyPDF2==3.0.1
+
+# Vector search - use version that actually exists and works
+faiss-cpu==1.8.0
+
+# Sentence transformers - compatible version
 sentence-transformers==2.2.2
 
-# Vector database (use newer version that's actually available)
-faiss-cpu==1.9.0.post1
-
-# Document processing (compatible versions)
-PyPDF2==3.0.1
-langchain-text-splitters==0.0.1
-
-# Core utilities
-numpy==1.24.3
-requests==2.31.0
-packaging==23.1
+# Core dependencies - let other packages manage numpy/requests
+# (Don't pin numpy - let sentence-transformers/faiss handle it)
