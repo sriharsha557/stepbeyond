@@ -1,29 +1,22 @@
+# Working FastAPI + CrewAI combination for 2025
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 pydantic==2.5.0
 python-dotenv==1.0.0
 
-# AI/ML Libraries - Compatible versions for crewai 0.11.0
-crewai==0.11.0
-langchain==0.0.351
-langchain-community==0.0.20
+# CrewAI and compatible AI stack
+crewai[tools]==0.193.0
 sentence-transformers==2.2.2
 
-# OpenAI - Compatible with crewai 0.11.0 (requires openai < 0.29.0)
-openai==0.28.1
+# Vector database (use newer version that's actually available)
+faiss-cpu==1.9.0.post1
 
-# Vector search
-faiss-cpu==1.7.4
-
-# Document Processing
+# Document processing (compatible versions)
 PyPDF2==3.0.1
-numpy==1.24.3
+langchain-text-splitters==0.0.1
 
-# Core dependencies
+# Core utilities
+numpy==1.24.3
 requests==2.31.0
 packaging==23.1
-typing-extensions==4.8.0
-
-# Additional dependencies that crewai might need
-tiktoken==0.5.2
