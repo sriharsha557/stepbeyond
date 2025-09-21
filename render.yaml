@@ -1,11 +1,21 @@
 services:
   - type: web
-    name: stepbeyond-api
+    name: stepbeyond-api-v2
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: GROQ_API_KEY
         sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: UVICORN_HOST
+        value: 0.0.0.0
+      - key: UVICORN_PORT
+        fromValue: $PORT
