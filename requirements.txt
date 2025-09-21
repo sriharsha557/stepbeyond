@@ -1,14 +1,11 @@
-# Updated dependencies for Render deployment with Qdrant
-# Tested combination that works together - January 2025
+# StepBeyond v2.0 - FastAPI + Qdrant Dependencies
+# Tested combination for successful Render deployment - January 2025
 
-# Core web framework
+# Core FastAPI framework
 fastapi==0.115.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.7
 python-dotenv==1.0.1
-
-# Streamlit for UI
-streamlit==1.31.1
 
 # Qdrant vector database client
 qdrant-client==1.7.3
@@ -19,26 +16,25 @@ python-docx==1.1.0
 
 # Text processing and embeddings
 sentence-transformers==2.3.1
-transformers==4.37.2
 
-# HTTP client for API calls
+# HTTP client for API calls (Groq integration)
 httpx==0.26.0
-requests==2.31.0
 
-# Data processing
-numpy==1.24.4
-pandas==2.1.4
-
-# LLM integration (Groq)
-groq==0.4.2
-
-# Text splitting and processing
+# Text splitting (minimal langchain)
 langchain-text-splitters==0.0.1
-langchain-core==0.1.23
 
-# Utility libraries
+# Core utilities
 pydantic==2.5.3
-typing-extensions==4.9.0
+numpy==1.24.4
 
-# Logging and monitoring
+# Logging
 loguru==0.7.2
+
+# NOTE: Removed dependencies that caused conflicts:
+# - streamlit (not needed for FastAPI backend)
+# - crewai (replaced with direct API calls)
+# - transformers (pulled by sentence-transformers)
+# - groq (using httpx for direct API calls)
+# - langchain-core (minimal usage)
+# - pandas (not needed for core functionality)
+# - requests (using httpx instead)
