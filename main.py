@@ -13,7 +13,7 @@ import shutil
 
 # Import updated modules
 from crew_agents import setup_agent, StepBeyondAgent
-from qdrant_rag_pipeline import QdrantRAGPipeline
+from rag_pipeline import QdrantRAGPipeline
 
 # Load environment variables
 load_dotenv()
