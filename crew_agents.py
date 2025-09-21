@@ -1,18 +1,18 @@
 import os
 from typing import Dict, Any
 import httpx
-from rag_pipeline import QdrantRAGPipeline
+from qdrant_rag_pipeline import LightweightRAGPipeline
 from loguru import logger
 
 class StepBeyondAgent:
     """
-    Simplified StepBeyond agent using direct LLM calls instead of CrewAI
-    This eliminates dependency conflicts while maintaining functionality
+    Lightweight StepBeyond agent using direct LLM calls and TF-IDF embeddings
+    Optimized for Render's 512MB memory limit
     """
     
     def __init__(self, groq_api_key: str, model_name: str = "llama-3.3-70b-versatile"):
         """
-        Initialize StepBeyond agent with Groq LLM and Qdrant RAG
+        Initialize StepBeyond agent with Groq LLM and lightweight RAG
         
         Args:
             groq_api_key: Groq API key
@@ -22,12 +22,12 @@ class StepBeyondAgent:
         self.model_name = model_name
         self.groq_base_url = "https://api.groq.com/openai/v1"
         
-        # Initialize Qdrant RAG pipeline
+        # Initialize lightweight RAG pipeline
         try:
-            self.rag = QdrantRAGPipeline()
-            logger.info("Qdrant RAG pipeline initialized successfully")
+            self.rag = LightweightRAGPipeline()
+            logger.info("Lightweight RAG pipeline initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize Qdrant RAG: {str(e)}")
+            logger.error(f"Failed to initialize RAG: {str(e)}")
             raise
         
         # Test Groq connection
@@ -206,7 +206,8 @@ Provide a clear, concise answer with practical steps. Focus on actionable advice
                     "status": collection_info.get('status', 'unknown')
                 },
                 "llm_system": "operational",  # If we got here, Groq is working
-                "model": self.model_name
+                "model": self.model_name,
+                "mode": "lightweight"
             }
             
             return status
@@ -216,7 +217,8 @@ Provide a clear, concise answer with practical steps. Focus on actionable advice
             return {
                 "rag_system": "error",
                 "llm_system": "unknown",
-                "error": str(e)
+                "error": str(e),
+                "mode": "lightweight"
             }
 
     def ingest_documents(self, data_dir: str = "data") -> int:
@@ -269,4 +271,3 @@ class StepBeyondCrew:
 def setup_crew(groq_api_key: str = None, model_name: str = None) -> StepBeyondCrew:
     """Backward compatibility function"""
     return StepBeyondCrew(groq_api_key or os.getenv('GROQ_API_KEY'), model_name)
-
