@@ -1,7 +1,7 @@
 import os
 from typing import Dict, Any
 import httpx
-from qdrant_rag_pipeline import LightweightRAGPipeline
+from rag_pipeline import LightweightRAGPipeline
 from loguru import logger
 
 class StepBeyondAgent:
@@ -271,3 +271,4 @@ class StepBeyondCrew:
 def setup_crew(groq_api_key: str = None, model_name: str = None) -> StepBeyondCrew:
     """Backward compatibility function"""
     return StepBeyondCrew(groq_api_key or os.getenv('GROQ_API_KEY'), model_name)
+
