@@ -311,4 +311,194 @@ async def upload_documents(files: List[UploadFile] = File(...)):
 
 # Main query processing endpoint
 @app.post("/query", response_model=QueryResponse)
-async def
+async def process_query(request: QueryRequest):
+    """Process a user query and return AI-generated response"""
+    try:
+        # Initialize agent if needed
+        agent = lazy_init_agent()
+        
+        logger.info(f"Processing query: {request.query}")
+        start_time = time.time()
+        
+        try:
+            # Try comprehensive processing first
+            response = agent.process_query(request.query)
+        except Exception as e:
+            logger.warning(f"Comprehensive processing failed, trying quick answer: {str(e)}")
+            # Fallback to quick answer
+            response = agent.quick_answer(request.query)
+        
+        processing_time = time.time() - start_time
+        
+        return QueryResponse(
+            response=response,
+            processing_time=processing_time,
+            success=True
+        )
+        
+    except Exception as e:
+        logger.error(f"Error processing query: {str(e)}")
+        return QueryResponse(
+            response="I apologize, but I encountered an error while processing your query. Please try again later.",
+            processing_time=0.0,
+            success=False,
+            error=str(e)
+        )
+
+# Quick answer endpoint (faster alternative)
+@app.post("/quick-answer", response_model=QueryResponse)
+async def get_quick_answer(request: QueryRequest):
+    """Get a quick answer using RAG context and LLM directly"""
+    try:
+        # Initialize agent if needed
+        agent = lazy_init_agent()
+        
+        logger.info(f"Generating quick answer for: {request.query}")
+        start_time = time.time()
+        
+        response = agent.quick_answer(request.query)
+        processing_time = time.time() - start_time
+        
+        return QueryResponse(
+            response=response,
+            processing_time=processing_time,
+            success=True
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generating quick answer: {str(e)}")
+        return QueryResponse(
+            response="I apologize, but I encountered an error while processing your query.",
+            processing_time=0.0,
+            success=False,
+            error=str(e)
+        )
+
+# Clear knowledge base endpoint
+@app.post("/clear-knowledge-base")
+async def clear_knowledge_base():
+    """Clear all documents from the knowledge base"""
+    try:
+        # Initialize RAG if needed
+        rag = lazy_init_rag()
+        rag.clear_collection()
+        
+        return {
+            "success": True,
+            "message": "Knowledge base cleared successfully"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error clearing knowledge base: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear knowledge base: {str(e)}")
+
+# Get relevant context endpoint
+@app.post("/context")
+async def get_context(request: QueryRequest):
+    """Get relevant context from the knowledge base for a query"""
+    try:
+        # Initialize RAG if needed
+        rag = lazy_init_rag()
+        
+        context = rag.get_context_for_query(request.query, request.max_chunks)
+        results = rag.similarity_search(request.query, limit=request.max_chunks)
+        
+        return {
+            "query": request.query,
+            "context": context,
+            "sources": [
+                {
+                    "content": result["content"][:200] + "..." if len(result["content"]) > 200 else result["content"],
+                    "filename": result["filename"],
+                    "file_type": result["file_type"],
+                    "score": result["score"],
+                    "chunk_index": result["chunk_index"]
+                }
+                for result in results
+            ],
+            "total_chunks": len(results)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting context: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Context retrieval failed: {str(e)}")
+
+# Example queries endpoint
+@app.get("/example-queries")
+async def get_example_queries():
+    """Get example queries that users can try"""
+    return {
+        "examples": [
+            "What documents do I need for a UK student visa?",
+            "How to get scholarships for studying in the US?",
+            "Best universities in Canada for engineering?",
+            "IELTS requirements for Australian universities",
+            "How to write a strong SOP?",
+            "Work permit rules for international students",
+            "What is the cost of studying in Germany?",
+            "How to apply for Australian student visa?",
+            "PhD application process in the US",
+            "Part-time job opportunities for international students"
+        ]
+    }
+
+# Health check with detailed info
+@app.get("/health")
+async def health_check():
+    """Detailed health check endpoint"""
+    global agent_instance, rag_instance
+    
+    # Get collection info safely
+    rag_info = {"status": "not_initialized", "documents": 0}
+    if rag_instance:
+        try:
+            collection_info = rag_instance.get_collection_info()
+            if collection_info:
+                rag_info = {
+                    "status": "ready", 
+                    "documents": collection_info.get('points_count', 0),
+                    "collection_status": collection_info.get('status', 'unknown')
+                }
+            else:
+                rag_info = {"status": "connected_empty", "documents": 0}
+        except Exception as e:
+            rag_info = {"status": "error", "documents": 0, "error": str(e)}
+    
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "version": "2.0.0",
+        "mode": "lightweight",
+        "components": {
+            "qdrant_rag": rag_info,
+            "stepbeyond_agent": {
+                "status": "ready" if agent_instance else "not_initialized"
+            },
+            "environment": {
+                "groq_api": bool(os.getenv('GROQ_API_KEY')),
+                "qdrant_url": bool(os.getenv('QDRANT_URL')),
+                "qdrant_api_key": bool(os.getenv('QDRANT_API_KEY'))
+            }
+        }
+    }
+
+# Collection information endpoint
+@app.get("/collection-info")
+async def get_collection_info():
+    """Get detailed information about the Qdrant collection"""
+    try:
+        # Initialize RAG if needed
+        rag = lazy_init_rag()
+        collection_info = rag.get_collection_info()
+        
+        return {
+            "success": True,
+            "collection_info": collection_info
+        }
+    except Exception as e:
+        logger.error(f"Error getting collection info: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get collection info: {str(e)}")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
