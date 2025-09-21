@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StepBeyond - Career Counseling Assistant</title>
+    <title>StepBeyond v2.0 - Career Counseling Assistant</title>
     <style>
         * {
             margin: 0;
@@ -39,6 +39,15 @@
         .header p {
             font-size: 1.2rem;
             opacity: 0.9;
+        }
+
+        .version-badge {
+            background: rgba(255,255,255,0.2);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-top: 10px;
+            display: inline-block;
         }
 
         .main-card {
@@ -92,6 +101,37 @@
             color: #721c24;
         }
 
+        .status-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .upload-section {
+            background: #e8f4fd;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 4px solid #17a2b8;
+        }
+
+        .file-upload {
+            margin: 15px 0;
+        }
+
+        .file-input {
+            width: 100%;
+            padding: 10px;
+            border: 2px dashed #17a2b8;
+            border-radius: 8px;
+            background: white;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .file-input:hover {
+            background: #f8f9fa;
+        }
+
         .query-section {
             margin-bottom: 30px;
         }
@@ -138,7 +178,7 @@
             color: white;
         }
 
-        .btn-primary:hover {
+        .btn-primary:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(46, 134, 171, 0.3);
         }
@@ -148,13 +188,35 @@
             color: white;
         }
 
-        .btn-secondary:hover {
+        .btn-secondary:hover:not(:disabled) {
             background: #5a6268;
         }
 
         .btn-success {
             background: #28a745;
             color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #218838;
+        }
+
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .btn-info:hover:not(:disabled) {
+            background: #138496;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #c82333;
         }
 
         .btn:disabled {
@@ -235,12 +297,37 @@
             100% { transform: rotate(360deg); }
         }
 
-        .error {
-            background: #f8d7da;
-            color: #721c24;
+        .alert {
             padding: 15px;
             border-radius: 8px;
             margin: 15px 0;
+            font-weight: 500;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
+            padding: 20px;
+            opacity: 0.8;
         }
 
         @media (max-width: 768px) {
@@ -267,6 +354,7 @@
         <div class="header">
             <h1>🎓 StepBeyond</h1>
             <p>Your AI-powered career counseling assistant for studying abroad</p>
+            <span class="version-badge">v2.0 - Now with Qdrant Vector Database</span>
         </div>
 
         <div class="main-card">
@@ -284,12 +372,16 @@
                             <span id="apiStatus" class="status-badge status-not-ready">Checking...</span>
                         </div>
                         <div class="status-item">
+                            <span>Qdrant Vector DB:</span>
+                            <span id="qdrantStatus" class="status-badge status-not-ready">Not Ready</span>
+                        </div>
+                        <div class="status-item">
                             <span>Knowledge Base:</span>
                             <span id="ragStatus" class="status-badge status-not-ready">Not Ready</span>
                         </div>
                         <div class="status-item">
-                            <span>AI Agents:</span>
-                            <span id="crewStatus" class="status-badge status-not-ready">Not Ready</span>
+                            <span>AI Agent:</span>
+                            <span id="agentStatus" class="status-badge status-not-ready">Not Ready</span>
                         </div>
                     </div>
                     
@@ -299,307 +391,25 @@
                     </div>
                 </div>
 
+                <!-- Document Upload Section -->
+                <div class="upload-section">
+                    <h3>📁 Upload Documents</h3>
+                    <p>Upload PDF, TXT, or DOCX files to add to your knowledge base</p>
+                    
+                    <div class="file-upload">
+                        <input type="file" id="fileInput" multiple accept=".pdf,.txt,.docx" class="file-input" onchange="handleFileSelect()">
+                        <div id="selectedFiles"></div>
+                    </div>
+                    
+                    <div class="button-group" style="margin-top: 15px;">
+                        <button class="btn btn-info" onclick="uploadDocuments()" id="uploadBtn" disabled>📚 Process Documents</button>
+                        <button class="btn btn-danger" onclick="clearKnowledgeBase()">🗑️ Clear Knowledge Base</button>
+                    </div>
+                </div>
+
                 <!-- Query Section -->
                 <div class="query-section">
                     <h3>💬 Ask Your Question</h3>
                     <textarea 
                         id="queryInput" 
-                        class="query-input" 
-                        placeholder="e.g., What are the requirements for a student visa to Canada?
-How do I apply for universities in the UK?
-What scholarships are available for Indian students?"
-                    ></textarea>
-                    
-                    <div class="button-group">
-                        <button class="btn btn-primary" onclick="processQuery()">🎯 Get Guidance</button>
-                        <button class="btn btn-secondary" onclick="getQuickAnswer()">⚡ Quick Answer</button>
-                    </div>
-                </div>
-
-                <!-- Loading -->
-                <div id="loading" class="loading">
-                    <div class="spinner"></div>
-                    <p>🤔 Thinking... This may take a moment.</p>
-                </div>
-
-                <!-- Response Section -->
-                <div id="responseSection" class="response-section">
-                    <h3>🎯 StepBeyond's Guidance:</h3>
-                    <div id="responseContent" class="response-content"></div>
-                    <div id="processingTime" class="processing-time"></div>
-                </div>
-
-                <!-- Example Queries -->
-                <div class="query-section">
-                    <h3>💡 Example Questions</h3>
-                    <div id="exampleQueries" class="example-queries">
-                        <!-- Will be populated by JavaScript -->
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // Configuration
-        const API_BASE_URL = 'https://stepbeyond-yavx.onrender.com';
-        
-        // State
-        let systemInitialized = false;
-
-        // Initialize on page load
-        window.addEventListener('DOMContentLoaded', function() {
-            checkStatus();
-            loadExampleQueries();
-        });
-
-        // API calling functions
-        async function apiCall(endpoint, method = 'GET', data = null) {
-            const url = `${API_BASE_URL}${endpoint}`;
-            const options = {
-                method: method,
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            };
-
-            if (data) {
-                options.body = JSON.stringify(data);
-            }
-
-            try {
-                const response = await fetch(url, options);
-                const result = await response.json();
-                
-                if (!response.ok) {
-                    throw new Error(result.detail || 'API request failed');
-                }
-                
-                return result;
-            } catch (error) {
-                console.error('API call failed:', error);
-                throw error;
-            }
-        }
-
-        // Status check
-        async function checkStatus() {
-            try {
-                // Check API connection
-                await apiCall('/');
-                document.getElementById('apiStatus').textContent = 'Connected';
-                document.getElementById('apiStatus').className = 'status-badge status-ready';
-
-                // Get detailed status
-                const status = await apiCall('/status');
-                
-                // Update RAG status
-                const ragStatusEl = document.getElementById('ragStatus');
-                if (status.rag_status === 'ready') {
-                    ragStatusEl.textContent = `Ready (${status.rag_documents} docs)`;
-                    ragStatusEl.className = 'status-badge status-ready';
-                } else {
-                    ragStatusEl.textContent = 'Not Ready';
-                    ragStatusEl.className = 'status-badge status-not-ready';
-                }
-
-                // Update Crew status
-                const crewStatusEl = document.getElementById('crewStatus');
-                if (status.crew_status === 'ready') {
-                    crewStatusEl.textContent = 'Ready';
-                    crewStatusEl.className = 'status-badge status-ready';
-                    systemInitialized = true;
-                } else {
-                    crewStatusEl.textContent = 'Not Ready';
-                    crewStatusEl.className = 'status-badge status-not-ready';
-                    systemInitialized = false;
-                }
-
-            } catch (error) {
-                document.getElementById('apiStatus').textContent = 'Disconnected';
-                document.getElementById('apiStatus').className = 'status-badge status-not-ready';
-                showError('Failed to connect to API: ' + error.message);
-            }
-        }
-
-        // Initialize system
-        async function initializeSystem() {
-            try {
-                showLoading(true);
-                const result = await apiCall('/initialize', 'POST');
-                
-                if (result.success) {
-                    showSuccess('System initialized successfully!');
-                    checkStatus();
-                } else {
-                    showError(result.message || 'Initialization failed');
-                }
-            } catch (error) {
-                showError('Failed to initialize system: ' + error.message);
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        // Process query
-        async function processQuery() {
-            const query = document.getElementById('queryInput').value.trim();
-            
-            if (!query) {
-                showError('Please enter a question before asking!');
-                return;
-            }
-
-            if (!systemInitialized) {
-                showError('System not initialized. Please initialize the system first.');
-                return;
-            }
-
-            try {
-                showLoading(true);
-                hideResponse();
-                
-                const result = await apiCall('/query', 'POST', { query: query });
-                
-                if (result.success) {
-                    showResponse(result.response, result.processing_time);
-                } else {
-                    showError(result.error || 'Failed to process query');
-                }
-            } catch (error) {
-                showError('Failed to process query: ' + error.message);
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        // Get quick answer
-        async function getQuickAnswer() {
-            const query = document.getElementById('queryInput').value.trim();
-            
-            if (!query) {
-                showError('Please enter a question before asking!');
-                return;
-            }
-
-            if (!systemInitialized) {
-                showError('System not initialized. Please initialize the system first.');
-                return;
-            }
-
-            try {
-                showLoading(true);
-                hideResponse();
-                
-                const result = await apiCall('/quick-answer', 'POST', { query: query });
-                
-                if (result.success) {
-                    showResponse(result.response, result.processing_time);
-                } else {
-                    showError(result.error || 'Failed to get quick answer');
-                }
-            } catch (error) {
-                showError('Failed to get quick answer: ' + error.message);
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        // Load example queries
-        async function loadExampleQueries() {
-            try {
-                const result = await apiCall('/example-queries');
-                const container = document.getElementById('exampleQueries');
-                
-                container.innerHTML = result.examples.map(example => 
-                    `<div class="example-query" onclick="setQuery('${example.replace(/'/g, "\\'")}')">${example}</div>`
-                ).join('');
-                
-            } catch (error) {
-                console.error('Failed to load example queries:', error);
-            }
-        }
-
-        // Set query from example
-        function setQuery(query) {
-            document.getElementById('queryInput').value = query;
-            document.getElementById('queryInput').focus();
-        }
-
-        // UI helper functions
-        function showLoading(show) {
-            const loadingEl = document.getElementById('loading');
-            if (show) {
-                loadingEl.classList.add('show');
-            } else {
-                loadingEl.classList.remove('show');
-            }
-        }
-
-        function showResponse(content, processingTime) {
-            const responseSection = document.getElementById('responseSection');
-            const responseContent = document.getElementById('responseContent');
-            const processingTimeEl = document.getElementById('processingTime');
-            
-            responseContent.textContent = content;
-            processingTimeEl.textContent = `⏱️ Response generated in ${processingTime.toFixed(2)} seconds`;
-            
-            responseSection.classList.add('show');
-            responseSection.scrollIntoView({ behavior: 'smooth' });
-        }
-
-        function hideResponse() {
-            document.getElementById('responseSection').classList.remove('show');
-        }
-
-        function showError(message) {
-            // Remove any existing error messages
-            const existingErrors = document.querySelectorAll('.error');
-            existingErrors.forEach(error => error.remove());
-            
-            // Create new error element
-            const errorEl = document.createElement('div');
-            errorEl.className = 'error';
-            errorEl.textContent = message;
-            
-            // Insert after the query section
-            const querySection = document.querySelector('.query-section');
-            querySection.parentNode.insertBefore(errorEl, querySection.nextSibling);
-            
-            // Remove error after 5 seconds
-            setTimeout(() => {
-                errorEl.remove();
-            }, 5000);
-        }
-
-        function showSuccess(message) {
-            // Remove any existing messages
-            const existingMessages = document.querySelectorAll('.error, .success');
-            existingMessages.forEach(msg => msg.remove());
-            
-            // Create success element
-            const successEl = document.createElement('div');
-            successEl.className = 'error'; // Reusing error styling but with success colors
-            successEl.style.background = '#d4edda';
-            successEl.style.color = '#155724';
-            successEl.textContent = message;
-            
-            // Insert after the status section
-            const statusSection = document.querySelector('.status-section');
-            statusSection.parentNode.insertBefore(successEl, statusSection.nextSibling);
-            
-            // Remove message after 5 seconds
-            setTimeout(() => {
-                successEl.remove();
-            }, 5000);
-        }
-
-        // Keyboard shortcuts
-        document.getElementById('queryInput').addEventListener('keydown', function(event) {
-            if (event.ctrlKey && event.key === 'Enter') {
-                processQuery();
-            }
-        });
-    </script>
-</body>
-</html>
+                        class="query-
