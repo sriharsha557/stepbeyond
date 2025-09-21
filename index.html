@@ -412,4 +412,424 @@
                     <h3>💬 Ask Your Question</h3>
                     <textarea 
                         id="queryInput" 
-                        class="query-
+                        class="query-input" 
+                        placeholder="e.g., What are the requirements for a student visa to Canada?
+How do I apply for universities in the UK?
+What scholarships are available for Indian students?"
+                    ></textarea>
+                    
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="processQuery()">🎯 Get Guidance</button>
+                        <button class="btn btn-secondary" onclick="getQuickAnswer()">⚡ Quick Answer</button>
+                    </div>
+                </div>
+
+                <!-- Loading -->
+                <div id="loading" class="loading">
+                    <div class="spinner"></div>
+                    <p>🤔 Thinking... This may take a moment.</p>
+                </div>
+
+                <!-- Response Section -->
+                <div id="responseSection" class="response-section">
+                    <h3>🎯 StepBeyond's Guidance:</h3>
+                    <div id="responseContent" class="response-content"></div>
+                    <div id="processingTime" class="processing-time"></div>
+                </div>
+
+                <!-- Example Queries -->
+                <div class="query-section">
+                    <h3>💡 Example Questions</h3>
+                    <div id="exampleQueries" class="example-queries">
+                        <!-- Will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>🚀 <strong>StepBeyond v2.0</strong> - Now with persistent Qdrant vector storage</p>
+            <p>Empowering Indian students to achieve their dreams of studying abroad</p>
+            <p>Built with ❤️ using FastAPI, Qdrant, Groq AI, and modern web technologies</p>
+        </div>
+    </div>
+
+    <script>
+        // Configuration - Update this URL to your deployed API
+        const API_BASE_URL = window.location.origin;
+        
+        // State
+        let systemInitialized = false;
+        let selectedFiles = [];
+
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            checkStatus();
+            loadExampleQueries();
+        });
+
+        // API calling functions
+        async function apiCall(endpoint, method = 'GET', data = null, isFormData = false) {
+            const url = `${API_BASE_URL}${endpoint}`;
+            const options = {
+                method: method,
+            };
+
+            if (!isFormData) {
+                options.headers = {
+                    'Content-Type': 'application/json',
+                };
+            }
+
+            if (data) {
+                options.body = isFormData ? data : JSON.stringify(data);
+            }
+
+            try {
+                const response = await fetch(url, options);
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.detail || 'API request failed');
+                }
+                
+                return result;
+            } catch (error) {
+                console.error('API call failed:', error);
+                throw error;
+            }
+        }
+
+        // File handling
+        function handleFileSelect() {
+            const fileInput = document.getElementById('fileInput');
+            const selectedFilesDiv = document.getElementById('selectedFiles');
+            const uploadBtn = document.getElementById('uploadBtn');
+            
+            selectedFiles = Array.from(fileInput.files);
+            
+            if (selectedFiles.length > 0) {
+                selectedFilesDiv.innerHTML = `
+                    <div class="alert alert-info">
+                        <strong>Selected ${selectedFiles.length} file(s):</strong><br>
+                        ${selectedFiles.map(f => f.name).join(', ')}
+                    </div>
+                `;
+                uploadBtn.disabled = false;
+            } else {
+                selectedFilesDiv.innerHTML = '';
+                uploadBtn.disabled = true;
+            }
+        }
+
+        // Upload documents
+        async function uploadDocuments() {
+            if (selectedFiles.length === 0) {
+                showAlert('Please select files to upload', 'error');
+                return;
+            }
+
+            try {
+                showLoading(true);
+                
+                const formData = new FormData();
+                selectedFiles.forEach(file => {
+                    formData.append('files', file);
+                });
+                
+                const result = await apiCall('/upload-documents', 'POST', formData, true);
+                
+                if (result.success) {
+                    showAlert(`✅ ${result.message}<br>Documents processed: ${result.documents_processed}<br>Total chunks created: ${result.total_chunks}`, 'success');
+                    
+                    // Clear file selection
+                    document.getElementById('fileInput').value = '';
+                    document.getElementById('selectedFiles').innerHTML = '';
+                    document.getElementById('uploadBtn').disabled = true;
+                    selectedFiles = [];
+                    
+                    // Refresh status
+                    checkStatus();
+                } else {
+                    showAlert('❌ ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Failed to upload documents: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Clear knowledge base
+        async function clearKnowledgeBase() {
+            if (!confirm('Are you sure you want to clear all documents from the knowledge base? This action cannot be undone.')) {
+                return;
+            }
+
+            try {
+                showLoading(true);
+                const result = await apiCall('/clear-knowledge-base', 'POST');
+                
+                if (result.success) {
+                    showAlert('✅ Knowledge base cleared successfully', 'success');
+                    checkStatus();
+                } else {
+                    showAlert('❌ Failed to clear knowledge base', 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Failed to clear knowledge base: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Status check
+        async function checkStatus() {
+            try {
+                // Check API connection
+                await apiCall('/api/health');
+                document.getElementById('apiStatus').textContent = 'Connected';
+                document.getElementById('apiStatus').className = 'status-badge status-ready';
+
+                // Get detailed status
+                const status = await apiCall('/status');
+                
+                // Update Qdrant status
+                const qdrantStatusEl = document.getElementById('qdrantStatus');
+                if (status.qdrant_configured) {
+                    qdrantStatusEl.textContent = 'Connected';
+                    qdrantStatusEl.className = 'status-badge status-ready';
+                } else {
+                    qdrantStatusEl.textContent = 'Not Configured';
+                    qdrantStatusEl.className = 'status-badge status-not-ready';
+                }
+
+                // Update RAG status
+                const ragStatusEl = document.getElementById('ragStatus');
+                if (status.rag_status === 'ready') {
+                    ragStatusEl.textContent = `Ready (${status.rag_documents} docs)`;
+                    ragStatusEl.className = 'status-badge status-ready';
+                } else if (status.rag_status === 'connected_empty') {
+                    ragStatusEl.textContent = 'Connected (Empty)';
+                    ragStatusEl.className = 'status-badge status-warning';
+                } else {
+                    ragStatusEl.textContent = 'Not Ready';
+                    ragStatusEl.className = 'status-badge status-not-ready';
+                }
+
+                // Update Agent status
+                const agentStatusEl = document.getElementById('agentStatus');
+                if (status.agent_status === 'ready') {
+                    agentStatusEl.textContent = 'Ready';
+                    agentStatusEl.className = 'status-badge status-ready';
+                    systemInitialized = true;
+                } else {
+                    agentStatusEl.textContent = 'Not Ready';
+                    agentStatusEl.className = 'status-badge status-not-ready';
+                    systemInitialized = false;
+                }
+
+            } catch (error) {
+                document.getElementById('apiStatus').textContent = 'Disconnected';
+                document.getElementById('apiStatus').className = 'status-badge status-not-ready';
+                showAlert('Failed to connect to API: ' + error.message, 'error');
+            }
+        }
+
+        // Initialize system
+        async function initializeSystem() {
+            try {
+                showLoading(true);
+                const result = await apiCall('/initialize', 'POST');
+                
+                if (result.success) {
+                    showAlert(`✅ ${result.message}<br>Documents in knowledge base: ${result.documents_count}`, 'success');
+                    checkStatus();
+                } else {
+                    showAlert(result.message || 'Initialization failed', 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Failed to initialize system: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Process query
+        async function processQuery() {
+            const query = document.getElementById('queryInput').value.trim();
+            
+            if (!query) {
+                showAlert('Please enter a question before asking!', 'error');
+                return;
+            }
+
+            if (!systemInitialized) {
+                showAlert('System not initialized. Please initialize the system first.', 'error');
+                return;
+            }
+
+            try {
+                showLoading(true);
+                hideResponse();
+                
+                const result = await apiCall('/query', 'POST', { query: query });
+                
+                if (result.success) {
+                    showResponse(result.response, result.processing_time);
+                } else {
+                    showAlert(result.error || 'Failed to process query', 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Failed to process query: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Get quick answer
+        async function getQuickAnswer() {
+            const query = document.getElementById('queryInput').value.trim();
+            
+            if (!query) {
+                showAlert('Please enter a question before asking!', 'error');
+                return;
+            }
+
+            if (!systemInitialized) {
+                showAlert('System not initialized. Please initialize the system first.', 'error');
+                return;
+            }
+
+            try {
+                showLoading(true);
+                hideResponse();
+                
+                const result = await apiCall('/quick-answer', 'POST', { query: query });
+                
+                if (result.success) {
+                    showResponse(result.response, result.processing_time);
+                } else {
+                    showAlert(result.error || 'Failed to get quick answer', 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Failed to get quick answer: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Load example queries
+        async function loadExampleQueries() {
+            try {
+                const result = await apiCall('/example-queries');
+                const container = document.getElementById('exampleQueries');
+                
+                container.innerHTML = result.examples.map(example => 
+                    `<div class="example-query" onclick="setQuery('${example.replace(/'/g, "\\'")}')">${example}</div>`
+                ).join('');
+                
+            } catch (error) {
+                console.error('Failed to load example queries:', error);
+            }
+        }
+
+        // Set query from example
+        function setQuery(query) {
+            document.getElementById('queryInput').value = query;
+            document.getElementById('queryInput').focus();
+        }
+
+        // UI helper functions
+        function showLoading(show) {
+            const loadingEl = document.getElementById('loading');
+            if (show) {
+                loadingEl.classList.add('show');
+            } else {
+                loadingEl.classList.remove('show');
+            }
+        }
+
+        function showResponse(content, processingTime) {
+            const responseSection = document.getElementById('responseSection');
+            const responseContent = document.getElementById('responseContent');
+            const processingTimeEl = document.getElementById('processingTime');
+            
+            responseContent.textContent = content;
+            processingTimeEl.textContent = `⏱️ Response generated in ${processingTime.toFixed(2)} seconds`;
+            
+            responseSection.classList.add('show');
+            responseSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function hideResponse() {
+            document.getElementById('responseSection').classList.remove('show');
+        }
+
+        function showAlert(message, type) {
+            // Remove any existing alerts
+            const existingAlerts = document.querySelectorAll('.alert');
+            existingAlerts.forEach(alert => alert.remove());
+            
+            // Create new alert element
+            const alertEl = document.createElement('div');
+            alertEl.className = `alert alert-${type}`;
+            alertEl.innerHTML = message;
+            
+            // Insert after the status section
+            const statusSection = document.querySelector('.status-section');
+            statusSection.parentNode.insertBefore(alertEl, statusSection.nextSibling);
+            
+            // Remove alert after 8 seconds
+            setTimeout(() => {
+                alertEl.remove();
+            }, 8000);
+        }
+
+        // Keyboard shortcuts
+        document.getElementById('queryInput').addEventListener('keydown', function(event) {
+            if (event.ctrlKey && event.key === 'Enter') {
+                processQuery();
+            }
+        });
+
+        // Drag and drop file upload
+        const fileInput = document.getElementById('fileInput');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            fileInput.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            fileInput.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            fileInput.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            fileInput.style.background = '#f0f8ff';
+        }
+
+        function unhighlight(e) {
+            fileInput.style.background = 'white';
+        }
+
+        fileInput.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            
+            fileInput.files = files;
+            handleFileSelect();
+        }
+    </script>
+</body>
+</html>
