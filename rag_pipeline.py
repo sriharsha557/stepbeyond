@@ -1,255 +1,369 @@
 import os
-import pickle
-import numpy as np
-import faiss
+import uuid
+from typing import List, Dict, Any, Optional
 from sentence_transformers import SentenceTransformer
-from langchain.document_loaders import PyPDFLoader, TextLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.schema import Document
-from typing import List, Dict, Any
-import logging
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, Range
+from qdrant_client.http.exceptions import ResponseHandlingException
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+import PyPDF2
+import docx
+from loguru import logger
+import time
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-class RAGPipeline:
+class QdrantRAGPipeline:
     def __init__(self, 
+                 collection_name: str = "stepbeyond_docs",
                  model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
                  chunk_size: int = 500,
-                 chunk_overlap: int = 50,
-                 data_dir: str = "data",
-                 embeddings_dir: str = "embeddings"):
+                 chunk_overlap: int = 50):
         """
-        Initialize RAG Pipeline with FAISS vector database
+        Initialize RAG Pipeline with Qdrant vector database
         """
+        self.collection_name = collection_name
         self.model_name = model_name
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.data_dir = data_dir
-        self.embeddings_dir = embeddings_dir
         
-        # Initialize sentence transformer model
+        # Get Qdrant credentials from environment
+        self.qdrant_url = os.getenv('QDRANT_URL')
+        self.qdrant_api_key = os.getenv('QDRANT_API_KEY')
+        
+        if not self.qdrant_url or not self.qdrant_api_key:
+            raise ValueError("QDRANT_URL and QDRANT_API_KEY must be set in environment variables")
+        
+        # Initialize embedding model
         logger.info(f"Loading embedding model: {model_name}")
         self.embedding_model = SentenceTransformer(model_name)
         self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
+        logger.info(f"Embedding dimension: {self.embedding_dim}")
         
-        # Initialize FAISS index
-        self.index = None
-        self.documents = []
-        self.metadata = []
+        # Initialize Qdrant client
+        self.client = QdrantClient(
+            url=self.qdrant_url,
+            api_key=self.qdrant_api_key,
+            timeout=60
+        )
         
-        # Create directories if they don't exist
-        os.makedirs(data_dir, exist_ok=True)
-        os.makedirs(embeddings_dir, exist_ok=True)
-        
-        # Text splitter
+        # Initialize text splitter
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             length_function=len,
             separators=["\n\n", "\n", " ", ""]
         )
+        
+        # Initialize collection
+        self._ensure_collection_exists()
 
-    def load_documents(self) -> List[Document]:
-        """Load documents from data directory"""
+    def _ensure_collection_exists(self):
+        """Ensure the collection exists in Qdrant"""
+        try:
+            # Check if collection exists
+            collections = self.client.get_collections()
+            collection_names = [c.name for c in collections.collections]
+            
+            if self.collection_name not in collection_names:
+                logger.info(f"Creating collection: {self.collection_name}")
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(
+                        size=self.embedding_dim,
+                        distance=Distance.COSINE
+                    )
+                )
+                logger.info(f"Collection {self.collection_name} created successfully")
+            else:
+                logger.info(f"Collection {self.collection_name} already exists")
+                
+        except Exception as e:
+            logger.error(f"Error ensuring collection exists: {str(e)}")
+            raise
+
+    def load_text_file(self, file_path: str) -> str:
+        """Load text from a text file"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                return file.read()
+        except Exception as e:
+            logger.error(f"Error loading text file {file_path}: {str(e)}")
+            return ""
+
+    def load_pdf_file(self, file_path: str) -> str:
+        """Load text from a PDF file"""
+        try:
+            text = ""
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                for page in pdf_reader.pages:
+                    text += page.extract_text() + "\n"
+            return text
+        except Exception as e:
+            logger.error(f"Error loading PDF file {file_path}: {str(e)}")
+            return ""
+
+    def load_docx_file(self, file_path: str) -> str:
+        """Load text from a DOCX file"""
+        try:
+            doc = docx.Document(file_path)
+            text = ""
+            for paragraph in doc.paragraphs:
+                text += paragraph.text + "\n"
+            return text
+        except Exception as e:
+            logger.error(f"Error loading DOCX file {file_path}: {str(e)}")
+            return ""
+
+    def load_documents_from_directory(self, data_dir: str = "data") -> List[Dict[str, Any]]:
+        """Load documents from directory"""
         documents = []
         
-        if not os.path.exists(self.data_dir):
-            logger.warning(f"Data directory {self.data_dir} does not exist")
+        if not os.path.exists(data_dir):
+            logger.warning(f"Data directory {data_dir} does not exist")
             return documents
             
-        for filename in os.listdir(self.data_dir):
-            file_path = os.path.join(self.data_dir, filename)
+        for filename in os.listdir(data_dir):
+            file_path = os.path.join(data_dir, filename)
             
+            if not os.path.isfile(file_path):
+                continue
+                
             try:
-                if filename.endswith('.pdf'):
-                    loader = PyPDFLoader(file_path)
-                    docs = loader.load()
-                    logger.info(f"Loaded PDF: {filename} with {len(docs)} pages")
-                    documents.extend(docs)
+                text_content = ""
+                
+                if filename.lower().endswith('.pdf'):
+                    text_content = self.load_pdf_file(file_path)
+                    logger.info(f"Loaded PDF: {filename}")
                     
-                elif filename.endswith('.txt'):
-                    loader = TextLoader(file_path, encoding='utf-8')
-                    docs = loader.load()
+                elif filename.lower().endswith('.txt'):
+                    text_content = self.load_text_file(file_path)
                     logger.info(f"Loaded TXT: {filename}")
-                    documents.extend(docs)
+                    
+                elif filename.lower().endswith('.docx'):
+                    text_content = self.load_docx_file(file_path)
+                    logger.info(f"Loaded DOCX: {filename}")
+                    
+                else:
+                    logger.warning(f"Unsupported file format: {filename}")
+                    continue
+                
+                if text_content.strip():
+                    documents.append({
+                        'content': text_content,
+                        'filename': filename,
+                        'filepath': file_path,
+                        'file_type': filename.split('.')[-1].lower()
+                    })
                     
             except Exception as e:
                 logger.error(f"Error loading {filename}: {str(e)}")
                 
+        logger.info(f"Loaded {len(documents)} documents from {data_dir}")
         return documents
 
-    def split_documents(self, documents: List[Document]) -> List[Document]:
+    def split_documents(self, documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Split documents into chunks"""
-        if not documents:
-            logger.warning("No documents to split")
-            return []
-            
-        chunks = self.text_splitter.split_documents(documents)
-        logger.info(f"Split {len(documents)} documents into {len(chunks)} chunks")
+        chunks = []
+        
+        for doc in documents:
+            try:
+                text_chunks = self.text_splitter.split_text(doc['content'])
+                
+                for i, chunk in enumerate(text_chunks):
+                    if chunk.strip():  # Only add non-empty chunks
+                        chunks.append({
+                            'content': chunk,
+                            'filename': doc['filename'],
+                            'filepath': doc['filepath'],
+                            'file_type': doc['file_type'],
+                            'chunk_index': i,
+                            'chunk_id': f"{doc['filename']}_{i}"
+                        })
+                        
+                logger.info(f"Split {doc['filename']} into {len(text_chunks)} chunks")
+                
+            except Exception as e:
+                logger.error(f"Error splitting document {doc['filename']}: {str(e)}")
+        
+        logger.info(f"Total chunks created: {len(chunks)}")
         return chunks
 
-    def create_embeddings(self, texts: List[str]) -> np.ndarray:
+    def create_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Create embeddings for text chunks"""
         if not texts:
-            logger.warning("No texts to embed")
-            return np.array([])
+            return []
             
-        logger.info(f"Creating embeddings for {len(texts)} text chunks")
+        logger.info(f"Creating embeddings for {len(texts)} chunks")
         embeddings = self.embedding_model.encode(texts, show_progress_bar=True)
-        return np.array(embeddings)
+        return embeddings.tolist()
 
-    def build_faiss_index(self, embeddings: np.ndarray):
-        """Build FAISS index from embeddings"""
-        if embeddings.size == 0:
-            logger.warning("No embeddings to index")
-            return
-            
-        # Create FAISS index (L2 distance)
-        self.index = faiss.IndexFlatL2(self.embedding_dim)
-        self.index.add(embeddings.astype('float32'))
-        logger.info(f"Built FAISS index with {self.index.ntotal} vectors")
-
-    def save_index(self):
-        """Save FAISS index and metadata to disk"""
-        if self.index is None:
-            logger.warning("No index to save")
-            return
-            
-        # Save FAISS index
-        index_path = os.path.join(self.embeddings_dir, "faiss_index.index")
-        faiss.write_index(self.index, index_path)
-        
-        # Save documents and metadata
-        docs_path = os.path.join(self.embeddings_dir, "documents.pkl")
-        metadata_path = os.path.join(self.embeddings_dir, "metadata.pkl")
-        
-        with open(docs_path, 'wb') as f:
-            pickle.dump(self.documents, f)
-            
-        with open(metadata_path, 'wb') as f:
-            pickle.dump(self.metadata, f)
-            
-        logger.info(f"Saved index and metadata to {self.embeddings_dir}")
-
-    def load_index(self) -> bool:
-        """Load FAISS index and metadata from disk"""
-        index_path = os.path.join(self.embeddings_dir, "faiss_index.index")
-        docs_path = os.path.join(self.embeddings_dir, "documents.pkl")
-        metadata_path = os.path.join(self.embeddings_dir, "metadata.pkl")
-        
-        try:
-            if os.path.exists(index_path) and os.path.exists(docs_path):
-                # Load FAISS index
-                self.index = faiss.read_index(index_path)
-                
-                # Load documents
-                with open(docs_path, 'rb') as f:
-                    self.documents = pickle.load(f)
-                    
-                # Load metadata if exists
-                if os.path.exists(metadata_path):
-                    with open(metadata_path, 'rb') as f:
-                        self.metadata = pickle.load(f)
-                
-                logger.info(f"Loaded index with {self.index.ntotal} vectors and {len(self.documents)} documents")
-                return True
-                
-        except Exception as e:
-            logger.error(f"Error loading index: {str(e)}")
-            
-        return False
-
-    def ingest_data(self):
-        """Full data ingestion pipeline"""
-        logger.info("Starting data ingestion pipeline...")
+    def ingest_documents_from_directory(self, data_dir: str = "data", batch_size: int = 50):
+        """Ingest documents from directory into Qdrant"""
+        logger.info(f"Starting document ingestion from {data_dir}")
         
         # Load documents
-        documents = self.load_documents()
+        documents = self.load_documents_from_directory(data_dir)
         if not documents:
-            logger.warning("No documents found to process")
-            return
+            logger.warning("No documents found to ingest")
+            return 0
         
-        # Split documents
+        # Split into chunks
         chunks = self.split_documents(documents)
         if not chunks:
             logger.warning("No chunks created")
-            return
-        
-        # Store documents and create metadata
-        self.documents = chunks
-        self.metadata = [{"source": doc.metadata.get("source", "unknown"), 
-                         "chunk_id": i} for i, doc in enumerate(chunks)]
+            return 0
         
         # Create embeddings
-        texts = [doc.page_content for doc in chunks]
+        texts = [chunk['content'] for chunk in chunks]
         embeddings = self.create_embeddings(texts)
         
-        if embeddings.size == 0:
-            logger.warning("No embeddings created")
-            return
+        if len(embeddings) != len(chunks):
+            logger.error("Mismatch between embeddings and chunks")
+            return 0
         
-        # Build FAISS index
-        self.build_faiss_index(embeddings)
-        
-        # Save everything
-        self.save_index()
-        
-        logger.info("Data ingestion completed successfully!")
-
-    def similarity_search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """Search for similar documents"""
-        if self.index is None:
-            logger.warning("No index loaded. Please run ingest_data() first.")
-            return []
-        
-        # Create query embedding
-        query_embedding = self.embedding_model.encode([query])
-        
-        # Search FAISS index
-        distances, indices = self.index.search(query_embedding.astype('float32'), k)
-        
-        # Prepare results
-        results = []
-        for i, (distance, idx) in enumerate(zip(distances[0], indices[0])):
-            if idx < len(self.documents):
-                result = {
-                    "content": self.documents[idx].page_content,
-                    "metadata": self.documents[idx].metadata,
-                    "distance": float(distance),
-                    "rank": i + 1
+        # Prepare points for Qdrant
+        points = []
+        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+            point = PointStruct(
+                id=str(uuid.uuid4()),
+                vector=embedding,
+                payload={
+                    'content': chunk['content'],
+                    'filename': chunk['filename'],
+                    'filepath': chunk['filepath'],
+                    'file_type': chunk['file_type'],
+                    'chunk_index': chunk['chunk_index'],
+                    'chunk_id': chunk['chunk_id'],
+                    'ingestion_timestamp': int(time.time())
                 }
-                results.append(result)
+            )
+            points.append(point)
         
-        logger.info(f"Found {len(results)} similar documents for query")
-        return results
+        # Upload to Qdrant in batches
+        total_uploaded = 0
+        for i in range(0, len(points), batch_size):
+            batch = points[i:i + batch_size]
+            try:
+                self.client.upsert(
+                    collection_name=self.collection_name,
+                    points=batch
+                )
+                total_uploaded += len(batch)
+                logger.info(f"Uploaded batch {i//batch_size + 1}: {len(batch)} points")
+                
+            except Exception as e:
+                logger.error(f"Error uploading batch {i//batch_size + 1}: {str(e)}")
+        
+        logger.info(f"Successfully ingested {total_uploaded} chunks from {len(documents)} documents")
+        return total_uploaded
+
+    def similarity_search(self, query: str, limit: int = 5, score_threshold: float = 0.3) -> List[Dict[str, Any]]:
+        """Search for similar documents in Qdrant"""
+        try:
+            # Create query embedding
+            query_embedding = self.embedding_model.encode([query])[0].tolist()
+            
+            # Search in Qdrant
+            search_results = self.client.search(
+                collection_name=self.collection_name,
+                query_vector=query_embedding,
+                limit=limit,
+                score_threshold=score_threshold
+            )
+            
+            # Format results
+            results = []
+            for result in search_results:
+                results.append({
+                    'content': result.payload['content'],
+                    'filename': result.payload['filename'],
+                    'file_type': result.payload['file_type'],
+                    'chunk_index': result.payload['chunk_index'],
+                    'score': result.score,
+                    'metadata': {
+                        'filepath': result.payload.get('filepath', ''),
+                        'chunk_id': result.payload.get('chunk_id', ''),
+                        'ingestion_timestamp': result.payload.get('ingestion_timestamp', 0)
+                    }
+                })
+            
+            logger.info(f"Found {len(results)} similar documents for query")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error in similarity search: {str(e)}")
+            return []
 
     def get_context_for_query(self, query: str, max_chunks: int = 5) -> str:
         """Get relevant context for a query"""
-        results = self.similarity_search(query, k=max_chunks)
+        results = self.similarity_search(query, limit=max_chunks)
         
         if not results:
-            return "No relevant information found."
+            return "No relevant information found in the knowledge base."
         
         context_parts = []
-        for result in results:
-            context_parts.append(f"[Source: {result['metadata'].get('source', 'Unknown')}]\n{result['content']}")
+        for i, result in enumerate(results, 1):
+            context_part = f"[Document {i}: {result['filename']} (Score: {result['score']:.3f})]\n{result['content']}"
+            context_parts.append(context_part)
         
-        return "\n\n---\n\n".join(context_parts)
+        return "\n\n" + "="*50 + "\n\n".join(context_parts)
+
+    def get_collection_info(self) -> Dict[str, Any]:
+        """Get information about the collection"""
+        try:
+            collection_info = self.client.get_collection(self.collection_name)
+            return {
+                'name': self.collection_name,
+                'vectors_count': collection_info.vectors_count,
+                'indexed_vectors_count': collection_info.indexed_vectors_count,
+                'points_count': collection_info.points_count,
+                'status': collection_info.status
+            }
+        except Exception as e:
+            logger.error(f"Error getting collection info: {str(e)}")
+            return {}
+
+    def delete_collection(self):
+        """Delete the entire collection"""
+        try:
+            self.client.delete_collection(self.collection_name)
+            logger.info(f"Deleted collection: {self.collection_name}")
+        except Exception as e:
+            logger.error(f"Error deleting collection: {str(e)}")
+
+    def clear_collection(self):
+        """Clear all points from the collection"""
+        try:
+            # Delete all points
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=Filter()
+            )
+            logger.info(f"Cleared all points from collection: {self.collection_name}")
+        except Exception as e:
+            logger.error(f"Error clearing collection: {str(e)}")
 
 if __name__ == "__main__":
     # Example usage
-    rag = RAGPipeline()
-    
-    # Check if index exists, if not create it
-    if not rag.load_index():
-        print("No existing index found. Creating new index...")
-        rag.ingest_data()
-    else:
-        print("Loaded existing index.")
-    
-    # Test query
-    query = "What are the requirements for student visa?"
-    context = rag.get_context_for_query(query)
-    print(f"\nQuery: {query}")
-    print(f"\nContext:\n{context}")
+    try:
+        rag = QdrantRAGPipeline()
+        
+        # Get collection info
+        info = rag.get_collection_info()
+        print(f"Collection info: {info}")
+        
+        # Ingest documents if the collection is empty
+        if info.get('points_count', 0) == 0:
+            print("Collection is empty. Ingesting documents...")
+            count = rag.ingest_documents_from_directory("data")
+            print(f"Ingested {count} document chunks")
+        
+        # Test search
+        query = "What are the requirements for student visa?"
+        context = rag.get_context_for_query(query, max_chunks=3)
+        print(f"\nQuery: {query}")
+        print(f"\nRelevant context:\n{context}")
+        
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        print("Make sure to set QDRANT_URL and QDRANT_API_KEY environment variables")
