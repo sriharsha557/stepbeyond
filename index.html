@@ -639,7 +639,7 @@ Type your question here..."
 
                 <!-- Example Queries -->
                 <div class="section">
-                    <h3>💡 Popular Questions</h3>
+                    <h3>💡 Popular Questions About Canada</h3>
                     <div id="exampleQueries" class="example-queries">
                         <!-- Will be populated by JavaScript -->
                     </div>
@@ -918,6 +918,248 @@ Type your question here..."
                 return;
             }
 
+                            try {
+                showLoading(true);
+                hideResponse();
+                
+                const result = await apiCall('/query', 'POST', { query: query });
+                
+                if (result.success) {
+                    showResponse(result.response, result.processing_time);
+                } else {
+                    showAlert('❌ ' + (result.error || 'Failed to process query'), 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Failed to process query: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Get quick answer
+        async function getQuickAnswer() {
+            const query = document.getElementById('queryInput').value.trim();
+            
+            if (!query) {
+                showAlert('Please enter your question first! 💬', 'error');
+                return;
+            }
+
+            if (!systemInitialized) {
+                showAlert('🚀 System needs to be initialized first. Please click "Initialize System" in the footer.', 'error');
+                return;
+            }
+
             try {
                 showLoading(true);
                 hideResponse();
+                
+                const result = await apiCall('/quick-answer', 'POST', { query: query });
+                
+                if (result.success) {
+                    showResponse(result.response, result.processing_time);
+                } else {
+                    showAlert('❌ ' + (result.error || 'Failed to get quick answer'), 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Failed to get quick answer: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Load example queries
+        async function loadExampleQueries() {
+            // Canada-focused example queries since it's the currently supported country
+            const canadaFocusedExamples = [
+                "What are the requirements for a Canadian student visa?",
+                "How do I apply for universities in Canada?",
+                "What scholarships are available for Indian students in Canada?",
+                "Which Canadian provinces are best for international students?",
+                "What is the cost of studying in Canada?",
+                "How do I prepare for studying in Canada?",
+                "What are the top universities in Canada for engineering?",
+                "How can I get a study permit for Canada?",
+                "What are the job opportunities for students in Canada?"
+            ];
+            
+            const container = document.getElementById('exampleQueries');
+            
+            // Try to load from API first, but use Canada-focused fallback
+            try {
+                const result = await apiCall('/example-queries');
+                if (result.examples && result.examples.length > 0) {
+                    container.innerHTML = result.examples.map(example => 
+                        `<div class="example-query" onclick="setQuery('${example.replace(/'/g, "\\'")}')">${example}</div>`
+                    ).join('');
+                } else {
+                    throw new Error('No examples returned from API');
+                }
+            } catch (error) {
+                console.log('Using Canada-focused example queries');
+                // Use Canada-focused fallback examples
+                container.innerHTML = canadaFocusedExamples.map(example => 
+                    `<div class="example-query" onclick="setQuery('${example}')">${example}</div>`
+                ).join('');
+            }
+        }
+
+        // Set query from example
+        function setQuery(query) {
+            document.getElementById('queryInput').value = query;
+            document.getElementById('queryInput').focus();
+            document.getElementById('queryInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        // UI helper functions
+        function showLoading(show) {
+            const loadingEl = document.getElementById('loading');
+            if (show) {
+                loadingEl.classList.add('show');
+            } else {
+                loadingEl.classList.remove('show');
+            }
+        }
+
+        function showResponse(content, processingTime) {
+            const responseSection = document.getElementById('responseSection');
+            const responseContent = document.getElementById('responseContent');
+            const processingTimeEl = document.getElementById('processingTime');
+            
+            responseContent.textContent = content;
+            processingTimeEl.textContent = `⏱️ Response generated in ${processingTime.toFixed(2)} seconds`;
+            
+            responseSection.classList.add('show');
+            responseSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function hideResponse() {
+            document.getElementById('responseSection').classList.remove('show');
+        }
+
+        function showAlert(message, type) {
+            // Remove any existing alerts
+            const existingAlerts = document.querySelectorAll('.alert');
+            existingAlerts.forEach(alert => alert.remove());
+            
+            // Create new alert element
+            const alertEl = document.createElement('div');
+            alertEl.className = `alert alert-${type}`;
+            alertEl.innerHTML = message;
+            
+            // Insert after the query section
+            const querySection = document.querySelector('.query-section');
+            querySection.parentNode.insertBefore(alertEl, querySection.nextSibling);
+            
+            // Auto-scroll to alert
+            setTimeout(() => {
+                alertEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
+            
+            // Remove alert after 8 seconds
+            setTimeout(() => {
+                if (alertEl.parentNode) {
+                    alertEl.remove();
+                }
+            }, 8000);
+        }
+
+        // Keyboard shortcuts
+        document.getElementById('queryInput').addEventListener('keydown', function(event) {
+            if (event.ctrlKey && event.key === 'Enter') {
+                event.preventDefault();
+                processQuery();
+            } else if (event.shiftKey && event.key === 'Enter') {
+                event.preventDefault();
+                getQuickAnswer();
+            }
+        });
+
+        // Add keyboard shortcut hints
+        document.getElementById('queryInput').addEventListener('focus', function() {
+            const placeholder = this.getAttribute('placeholder');
+            if (!placeholder.includes('Ctrl+Enter')) {
+                this.setAttribute('placeholder', placeholder + '\n\n💡 Tips: Ctrl+Enter for Expert Guidance, Shift+Enter for Quick Answer');
+            }
+        });
+
+        document.getElementById('queryInput').addEventListener('blur', function() {
+            const originalPlaceholder = `Ask me about:
+• University applications and requirements
+• Student visa processes and documentation  
+• Scholarship opportunities and funding
+• Country-specific study abroad information
+• Career guidance and course selection
+
+Type your question here...`;
+            this.setAttribute('placeholder', originalPlaceholder);
+        });
+
+        // Drag and drop file upload
+        const fileInput = document.getElementById('fileInput');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            fileInput.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            fileInput.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            fileInput.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            fileInput.style.background = '#e3f2fd';
+            fileInput.style.borderColor = '#1976d2';
+        }
+
+        function unhighlight(e) {
+            fileInput.style.background = 'white';
+            fileInput.style.borderColor = '#17a2b8';
+        }
+
+        fileInput.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            
+            fileInput.files = files;
+            handleFileSelect();
+        }
+
+        // Auto-initialize system on first query if not initialized
+        let autoInitTriggered = false;
+        
+        async function autoInitializeIfNeeded() {
+            if (!systemInitialized && !autoInitTriggered) {
+                autoInitTriggered = true;
+                showAlert('🚀 Initializing system for you... Please wait a moment.', 'info');
+                await initializeSystem();
+            }
+        }
+
+        // Override the original processQuery and getQuickAnswer to include auto-init
+        const originalProcessQuery = processQuery;
+        const originalGetQuickAnswer = getQuickAnswer;
+
+        processQuery = async function() {
+            await autoInitializeIfNeeded();
+            if (systemInitialized) {
+                return originalProcessQuery();
+            }
+        };
+
+        getQuickAnswer = async function() {
+            await autoInitializeIfNeeded();
+            if (systemInitialized) {
+                return originalGetQuickAnswer();
+            }
+        };
