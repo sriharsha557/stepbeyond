@@ -650,35 +650,46 @@ Type your question here..."
         <div class="footer">
             <div class="footer-content">
                 <h4>🚀 StepBeyond v2.0</h4>
-                <p>Built with cutting-edge AI technology to provide you with the most accurate and up-to-date guidance</p>
-            </div>
-            
-            <div class="tech-details">
-                <div class="tech-item">
-                    <span>API Status:</span>
-                    <span id="apiStatus" class="status-badge status-not-ready">Checking...</span>
+                <p>Built with cutting-edge AI technology to provide you with the most accurate and up-to-date guidance for studying in Canada</p>
+                
+                <div id="systemStatusIndicator" style="margin-top: 20px;">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                        <span>System Status:</span>
+                        <span id="overallStatus" class="status-badge status-not-ready">Checking...</span>
+                    </div>
                 </div>
-                <div class="tech-item">
-                    <span>Vector Database:</span>
-                    <span id="qdrantStatus" class="status-badge status-not-ready">Not Ready</span>
+                
+                <!-- Technical Details - Only shown on errors -->
+                <div id="technicalDetails" style="display: none; margin-top: 20px; padding: 20px; background: rgba(255,255,255,0.1); border-radius: 10px;">
+                    <h5 style="margin-bottom: 15px; color: #fff;">Technical Details:</h5>
+                    <div class="tech-details">
+                        <div class="tech-item">
+                            <span>API Status:</span>
+                            <span id="apiStatus" class="status-badge status-not-ready">Checking...</span>
+                        </div>
+                        <div class="tech-item">
+                            <span>Vector Database:</span>
+                            <span id="qdrantStatus" class="status-badge status-not-ready">Not Ready</span>
+                        </div>
+                        <div class="tech-item">
+                            <span>Knowledge Base:</span>
+                            <span id="ragStatus" class="status-badge status-not-ready">Not Ready</span>
+                        </div>
+                        <div class="tech-item">
+                            <span>AI Agent:</span>
+                            <span id="agentStatus" class="status-badge status-not-ready">Not Ready</span>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 15px;">
+                        <button class="btn btn-success" onclick="initializeSystem()" style="margin-right: 10px;">
+                            🚀 Retry Initialize
+                        </button>
+                        <button class="btn btn-secondary" onclick="checkStatus()">
+                            🔄 Refresh Status
+                        </button>
+                    </div>
                 </div>
-                <div class="tech-item">
-                    <span>Knowledge Base:</span>
-                    <span id="ragStatus" class="status-badge status-not-ready">Not Ready</span>
-                </div>
-                <div class="tech-item">
-                    <span>AI Agent:</span>
-                    <span id="agentStatus" class="status-badge status-not-ready">Not Ready</span>
-                </div>
-            </div>
-            
-            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.2);">
-                <button class="btn btn-success" onclick="initializeSystem()" style="margin-right: 10px;">
-                    🚀 Initialize System
-                </button>
-                <button class="btn btn-secondary" onclick="checkStatus()">
-                    🔄 Refresh Status
-                </button>
             </div>
         </div>
     </div>
@@ -825,8 +836,11 @@ Type your question here..."
             }
         }
 
-        // Status check with better error handling
+        // Status check with simplified UI
         async function checkStatus() {
+            const overallStatusEl = document.getElementById('overallStatus');
+            const technicalDetailsEl = document.getElementById('technicalDetails');
+            
             try {
                 // First check if API is responsive
                 console.log('Checking API health...');
@@ -839,68 +853,115 @@ Type your question here..."
                 const status = await apiCall('/status');
                 console.log('Status response:', status);
                 
-                // Update Qdrant status
-                const qdrantStatusEl = document.getElementById('qdrantStatus');
-                if (status.qdrant_configured) {
-                    qdrantStatusEl.textContent = 'Connected';
-                    qdrantStatusEl.className = 'status-badge status-ready';
-                } else {
-                    qdrantStatusEl.textContent = 'Not Configured';
-                    qdrantStatusEl.className = 'status-badge status-not-ready';
-                }
-
-                // Update RAG status
-                const ragStatusEl = document.getElementById('ragStatus');
-                if (status.rag_status === 'ready') {
-                    ragStatusEl.textContent = `Ready (${status.rag_documents} docs)`;
-                    ragStatusEl.className = 'status-badge status-ready';
-                } else if (status.rag_status === 'connected_empty') {
-                    ragStatusEl.textContent = 'Connected (Empty)';
-                    ragStatusEl.className = 'status-badge status-warning';
-                } else {
-                    ragStatusEl.textContent = 'Not Ready';
-                    ragStatusEl.className = 'status-badge status-not-ready';
-                }
-
-                // Update Agent status
-                const agentStatusEl = document.getElementById('agentStatus');
-                if (status.agent_status === 'ready') {
-                    agentStatusEl.textContent = 'Ready';
-                    agentStatusEl.className = 'status-badge status-ready';
+                // Update individual status indicators (for technical details)
+                updateIndividualStatuses(status);
+                
+                // Determine overall system status
+                const allReady = status.qdrant_configured && 
+                                (status.rag_status === 'ready' || status.rag_status === 'connected_empty') && 
+                                status.agent_status === 'ready';
+                
+                if (allReady) {
+                    overallStatusEl.textContent = '✅ System Ready';
+                    overallStatusEl.className = 'status-badge status-ready';
                     systemInitialized = true;
+                    technicalDetailsEl.style.display = 'none';
                 } else {
-                    agentStatusEl.textContent = 'Not Ready';
-                    agentStatusEl.className = 'status-badge status-not-ready';
+                    overallStatusEl.textContent = '⚠️ System Initializing...';
+                    overallStatusEl.className = 'status-badge status-warning';
                     systemInitialized = false;
+                    // Auto-initialize if not ready
+                    setTimeout(initializeSystem, 1000);
                 }
 
             } catch (error) {
                 console.error('Status check error:', error);
+                overallStatusEl.textContent = '❌ System Error';
+                overallStatusEl.className = 'status-badge status-not-ready';
+                systemInitialized = false;
+                
+                // Show technical details on error
+                technicalDetailsEl.style.display = 'block';
                 document.getElementById('apiStatus').textContent = 'Error';
                 document.getElementById('apiStatus').className = 'status-badge status-not-ready';
             }
         }
 
-        // Initialize system with better error handling
+        // Helper function to update individual status indicators
+        function updateIndividualStatuses(status) {
+            // Update Qdrant status
+            const qdrantStatusEl = document.getElementById('qdrantStatus');
+            if (status.qdrant_configured) {
+                qdrantStatusEl.textContent = 'Connected';
+                qdrantStatusEl.className = 'status-badge status-ready';
+            } else {
+                qdrantStatusEl.textContent = 'Not Configured';
+                qdrantStatusEl.className = 'status-badge status-not-ready';
+            }
+
+            // Update RAG status
+            const ragStatusEl = document.getElementById('ragStatus');
+            if (status.rag_status === 'ready') {
+                ragStatusEl.textContent = `Ready (${status.rag_documents} docs)`;
+                ragStatusEl.className = 'status-badge status-ready';
+            } else if (status.rag_status === 'connected_empty') {
+                ragStatusEl.textContent = 'Connected (Empty)';
+                ragStatusEl.className = 'status-badge status-warning';
+            } else {
+                ragStatusEl.textContent = 'Not Ready';
+                ragStatusEl.className = 'status-badge status-not-ready';
+            }
+
+            // Update Agent status
+            const agentStatusEl = document.getElementById('agentStatus');
+            if (status.agent_status === 'ready') {
+                agentStatusEl.textContent = 'Ready';
+                agentStatusEl.className = 'status-badge status-ready';
+            } else {
+                agentStatusEl.textContent = 'Not Ready';
+                agentStatusEl.className = 'status-badge status-not-ready';
+            }
+        }
+
+        // Initialize system with simplified UI
         async function initializeSystem() {
+            const overallStatusEl = document.getElementById('overallStatus');
+            const technicalDetailsEl = document.getElementById('technicalDetails');
+            
             try {
-                showLoading(true);
-                console.log('Initializing system...');
+                overallStatusEl.textContent = '⚙️ Initializing...';
+                overallStatusEl.className = 'status-badge status-warning';
                 
+                console.log('Initializing system...');
                 const result = await apiCall('/initialize', 'POST');
                 console.log('Initialize response:', result);
                 
                 if (result.success) {
-                    showAlert(`🎉 System initialized successfully!<br>📚 Documents in knowledge base: ${result.documents_count}<br>⚡ Mode: ${result.mode || 'Standard'}`, 'success');
-                    checkStatus();
+                    overallStatusEl.textContent = '✅ System Ready';
+                    overallStatusEl.className = 'status-badge status-ready';
+                    systemInitialized = true;
+                    technicalDetailsEl.style.display = 'none';
+                    
+                    // Subtle success indication without intrusive alert
+                    console.log(`System initialized successfully. Documents: ${result.documents_count}`);
                 } else {
-                    showAlert('❌ ' + (result.message || 'Initialization failed'), 'error');
+                    throw new Error(result.message || 'Initialization failed');
                 }
             } catch (error) {
                 console.error('Initialize error:', error);
-                showAlert('❌ Failed to initialize system. Please check the system status and try again.', 'error');
-            } finally {
-                showLoading(false);
+                overallStatusEl.textContent = '❌ System Error';
+                overallStatusEl.className = 'status-badge status-not-ready';
+                systemInitialized = false;
+                
+                // Show technical details on error
+                technicalDetailsEl.style.display = 'block';
+                
+                // Only show user-facing error for critical issues
+                if (error.message.includes('non-JSON response') || error.message.includes('Server')) {
+                    showAlert('🔧 System is starting up. Please wait a moment and try again.', 'info');
+                } else {
+                    showAlert('❌ Unable to initialize system. Please check your connection and try again.', 'error');
+                }
             }
         }
 
@@ -1135,13 +1196,12 @@ Type your question here...`;
             handleFileSelect();
         }
 
-        // Auto-initialize system on first query if not initialized
+        // Auto-initialize system on first query - simplified
         let autoInitTriggered = false;
         
         async function autoInitializeIfNeeded() {
             if (!systemInitialized && !autoInitTriggered) {
                 autoInitTriggered = true;
-                showAlert('🚀 Initializing system for you... Please wait a moment.', 'info');
                 await initializeSystem();
             }
         }
@@ -1151,15 +1211,69 @@ Type your question here...`;
         const originalGetQuickAnswer = getQuickAnswer;
 
         processQuery = async function() {
+            const query = document.getElementById('queryInput').value.trim();
+            
+            if (!query) {
+                showAlert('Please enter your question first! 💬', 'error');
+                return;
+            }
+
+            // Auto-initialize if needed
             await autoInitializeIfNeeded();
-            if (systemInitialized) {
-                return originalProcessQuery();
+            
+            if (!systemInitialized) {
+                showAlert('🔧 System is still initializing. Please wait a moment and try again.', 'info');
+                return;
+            }
+
+            try {
+                showLoading(true);
+                hideResponse();
+                
+                const result = await apiCall('/query', 'POST', { query: query });
+                
+                if (result.success) {
+                    showResponse(result.response, result.processing_time);
+                } else {
+                    showAlert('❌ ' + (result.error || 'Failed to process query'), 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Failed to process query: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
             }
         };
 
         getQuickAnswer = async function() {
+            const query = document.getElementById('queryInput').value.trim();
+            
+            if (!query) {
+                showAlert('Please enter your question first! 💬', 'error');
+                return;
+            }
+
+            // Auto-initialize if needed
             await autoInitializeIfNeeded();
-            if (systemInitialized) {
-                return originalGetQuickAnswer();
+            
+            if (!systemInitialized) {
+                showAlert('🔧 System is still initializing. Please wait a moment and try again.', 'info');
+                return;
+            }
+
+            try {
+                showLoading(true);
+                hideResponse();
+                
+                const result = await apiCall('/quick-answer', 'POST', { query: query });
+                
+                if (result.success) {
+                    showResponse(result.response, result.processing_time);
+                } else {
+                    showAlert('❌ ' + (result.error || 'Failed to get quick answer'), 'error');
+                }
+            } catch (error) {
+                showAlert('❌ Failed to get quick answer: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
             }
         };
