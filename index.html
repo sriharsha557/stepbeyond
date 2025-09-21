@@ -455,7 +455,7 @@ What scholarships are available for Indian students?"
     </div>
 
     <script>
-        // Configuration - Update this URL to your deployed API
+        // Configuration - Fix API endpoint detection
         const API_BASE_URL = window.location.origin;
         
         // State
@@ -464,13 +464,16 @@ What scholarships are available for Indian students?"
 
         // Initialize on page load
         window.addEventListener('DOMContentLoaded', function() {
+            console.log('API Base URL:', API_BASE_URL);
             checkStatus();
             loadExampleQueries();
         });
 
-        // API calling functions
+        // API calling functions with better error handling
         async function apiCall(endpoint, method = 'GET', data = null, isFormData = false) {
             const url = `${API_BASE_URL}${endpoint}`;
+            console.log(`Making API call: ${method} ${url}`);
+            
             const options = {
                 method: method,
             };
@@ -487,10 +490,20 @@ What scholarships are available for Indian students?"
 
             try {
                 const response = await fetch(url, options);
+                console.log(`Response status: ${response.status}`);
+                
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    console.error('Non-JSON response:', text.substring(0, 200));
+                    throw new Error('Server returned non-JSON response. Check server logs.');
+                }
+                
                 const result = await response.json();
                 
                 if (!response.ok) {
-                    throw new Error(result.detail || 'API request failed');
+                    throw new Error(result.detail || `HTTP ${response.status}: ${response.statusText}`);
                 }
                 
                 return result;
@@ -583,16 +596,19 @@ What scholarships are available for Indian students?"
             }
         }
 
-        // Status check
+        // Status check with better error handling
         async function checkStatus() {
             try {
-                // Check API connection
+                // First check if API is responsive
+                console.log('Checking API health...');
                 await apiCall('/api/health');
                 document.getElementById('apiStatus').textContent = 'Connected';
                 document.getElementById('apiStatus').className = 'status-badge status-ready';
 
                 // Get detailed status
+                console.log('Getting detailed status...');
                 const status = await apiCall('/status');
+                console.log('Status response:', status);
                 
                 // Update Qdrant status
                 const qdrantStatusEl = document.getElementById('qdrantStatus');
@@ -630,26 +646,42 @@ What scholarships are available for Indian students?"
                 }
 
             } catch (error) {
-                document.getElementById('apiStatus').textContent = 'Disconnected';
+                console.error('Status check error:', error);
+                document.getElementById('apiStatus').textContent = 'Error';
                 document.getElementById('apiStatus').className = 'status-badge status-not-ready';
-                showAlert('Failed to connect to API: ' + error.message, 'error');
+                
+                // Show more specific error
+                if (error.message.includes('non-JSON response')) {
+                    showAlert('❌ API returned HTML instead of JSON. This usually means:<br>• Server is still starting up<br>• Environment variables not set<br>• Server error occurred<br><br>Check the server logs and try refreshing in a minute.', 'error');
+                } else {
+                    showAlert('❌ Failed to connect to API: ' + error.message, 'error');
+                }
             }
         }
 
-        // Initialize system
+        // Initialize system with better error handling
         async function initializeSystem() {
             try {
                 showLoading(true);
+                console.log('Initializing system...');
+                
                 const result = await apiCall('/initialize', 'POST');
+                console.log('Initialize response:', result);
                 
                 if (result.success) {
-                    showAlert(`✅ ${result.message}<br>Documents in knowledge base: ${result.documents_count}`, 'success');
+                    showAlert(`✅ ${result.message}<br>Documents in knowledge base: ${result.documents_count}<br>Mode: ${result.mode || 'standard'}`, 'success');
                     checkStatus();
                 } else {
-                    showAlert(result.message || 'Initialization failed', 'error');
+                    showAlert('❌ ' + (result.message || 'Initialization failed'), 'error');
                 }
             } catch (error) {
-                showAlert('❌ Failed to initialize system: ' + error.message, 'error');
+                console.error('Initialize error:', error);
+                
+                if (error.message.includes('non-JSON response')) {
+                    showAlert('❌ Server error during initialization. This could mean:<br>• Missing environment variables (GROQ_API_KEY, QDRANT_URL, QDRANT_API_KEY)<br>• Qdrant connection failed<br>• Server configuration issue<br><br>Check the server logs for details.', 'error');
+                } else {
+                    showAlert('❌ Failed to initialize system: ' + error.message, 'error');
+                }
             } finally {
                 showLoading(false);
             }
@@ -678,7 +710,7 @@ What scholarships are available for Indian students?"
                 if (result.success) {
                     showResponse(result.response, result.processing_time);
                 } else {
-                    showAlert(result.error || 'Failed to process query', 'error');
+                    showAlert('❌ ' + (result.error || 'Failed to process query'), 'error');
                 }
             } catch (error) {
                 showAlert('❌ Failed to process query: ' + error.message, 'error');
@@ -710,7 +742,7 @@ What scholarships are available for Indian students?"
                 if (result.success) {
                     showResponse(result.response, result.processing_time);
                 } else {
-                    showAlert(result.error || 'Failed to get quick answer', 'error');
+                    showAlert('❌ ' + (result.error || 'Failed to get quick answer'), 'error');
                 }
             } catch (error) {
                 showAlert('❌ Failed to get quick answer: ' + error.message, 'error');
@@ -731,6 +763,7 @@ What scholarships are available for Indian students?"
                 
             } catch (error) {
                 console.error('Failed to load example queries:', error);
+                // Don't show error for example queries - it's not critical
             }
         }
 
@@ -780,10 +813,10 @@ What scholarships are available for Indian students?"
             const statusSection = document.querySelector('.status-section');
             statusSection.parentNode.insertBefore(alertEl, statusSection.nextSibling);
             
-            // Remove alert after 8 seconds
+            // Remove alert after 10 seconds
             setTimeout(() => {
                 alertEl.remove();
-            }, 8000);
+            }, 10000);
         }
 
         // Keyboard shortcuts
