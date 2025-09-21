@@ -1,27 +1,41 @@
 import os
 import uuid
 from typing import List, Dict, Any, Optional
-from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, Range
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter
 from qdrant_client.http.exceptions import ResponseHandlingException
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 import PyPDF2
 import docx
 from loguru import logger
 import time
+import httpx
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize, sent_tokenize
+import pickle
 
-class QdrantRAGPipeline:
+# Download required NLTK data
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
+
+try:
+    nltk.data.find('corpora/stopwords')
+except LookupError:
+    nltk.download('stopwords')
+
+class LightweightRAGPipeline:
     def __init__(self, 
                  collection_name: str = "stepbeyond_docs",
-                 model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
                  chunk_size: int = 500,
                  chunk_overlap: int = 50):
         """
-        Initialize RAG Pipeline with Qdrant vector database
+        Initialize Lightweight RAG Pipeline with TF-IDF embeddings for Render free tier
         """
         self.collection_name = collection_name
-        self.model_name = model_name
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         
@@ -32,25 +46,24 @@ class QdrantRAGPipeline:
         if not self.qdrant_url or not self.qdrant_api_key:
             raise ValueError("QDRANT_URL and QDRANT_API_KEY must be set in environment variables")
         
-        # Initialize embedding model
-        logger.info(f"Loading embedding model: {model_name}")
-        self.embedding_model = SentenceTransformer(model_name)
-        self.embedding_dim = self.embedding_model.get_sentence_embedding_dimension()
-        logger.info(f"Embedding dimension: {self.embedding_dim}")
+        # Initialize TF-IDF vectorizer (lightweight alternative to sentence-transformers)
+        self.vectorizer = TfidfVectorizer(
+            max_features=384,  # Match common embedding dimensions but lighter
+            stop_words='english',
+            ngram_range=(1, 2),  # Include bigrams
+            max_df=0.95,
+            min_df=2
+        )
+        
+        self.embedding_dim = 384  # TF-IDF feature dimension
+        self.is_fitted = False
         
         # Initialize Qdrant client
+        logger.info(f"Connecting to Qdrant at: {self.qdrant_url}")
         self.client = QdrantClient(
             url=self.qdrant_url,
             api_key=self.qdrant_api_key,
             timeout=60
-        )
-        
-        # Initialize text splitter
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            length_function=len,
-            separators=["\n\n", "\n", " ", ""]
         )
         
         # Initialize collection
@@ -79,6 +92,41 @@ class QdrantRAGPipeline:
         except Exception as e:
             logger.error(f"Error ensuring collection exists: {str(e)}")
             raise
+
+    def simple_text_splitter(self, text: str) -> List[str]:
+        """Simple text splitting using NLTK"""
+        try:
+            # Split into sentences first
+            sentences = sent_tokenize(text)
+            
+            chunks = []
+            current_chunk = ""
+            
+            for sentence in sentences:
+                # If adding this sentence would exceed chunk_size, start new chunk
+                if len(current_chunk) + len(sentence) > self.chunk_size:
+                    if current_chunk.strip():
+                        chunks.append(current_chunk.strip())
+                    current_chunk = sentence
+                else:
+                    current_chunk += " " + sentence if current_chunk else sentence
+            
+            # Add the last chunk
+            if current_chunk.strip():
+                chunks.append(current_chunk.strip())
+                
+            return chunks
+            
+        except Exception as e:
+            logger.error(f"Error in text splitting: {str(e)}")
+            # Fallback to simple splitting
+            words = text.split()
+            chunks = []
+            for i in range(0, len(words), self.chunk_size//10):  # Rough word count
+                chunk = " ".join(words[i:i+self.chunk_size//10])
+                if chunk.strip():
+                    chunks.append(chunk.strip())
+            return chunks
 
     def load_text_file(self, file_path: str) -> str:
         """Load text from a text file"""
@@ -167,7 +215,7 @@ class QdrantRAGPipeline:
         
         for doc in documents:
             try:
-                text_chunks = self.text_splitter.split_text(doc['content'])
+                text_chunks = self.simple_text_splitter(doc['content'])
                 
                 for i, chunk in enumerate(text_chunks):
                     if chunk.strip():  # Only add non-empty chunks
@@ -189,13 +237,43 @@ class QdrantRAGPipeline:
         return chunks
 
     def create_embeddings(self, texts: List[str]) -> List[List[float]]:
-        """Create embeddings for text chunks"""
+        """Create TF-IDF embeddings for text chunks"""
         if not texts:
             return []
             
-        logger.info(f"Creating embeddings for {len(texts)} chunks")
-        embeddings = self.embedding_model.encode(texts, show_progress_bar=True)
-        return embeddings.tolist()
+        logger.info(f"Creating TF-IDF embeddings for {len(texts)} chunks")
+        
+        try:
+            if not self.is_fitted:
+                # Fit the vectorizer on all texts
+                self.vectorizer.fit(texts)
+                self.is_fitted = True
+                logger.info("TF-IDF vectorizer fitted")
+            
+            # Transform texts to vectors
+            tfidf_matrix = self.vectorizer.transform(texts)
+            
+            # Convert sparse matrix to dense and then to list
+            embeddings = tfidf_matrix.toarray().tolist()
+            
+            # Pad or truncate to exact dimension
+            processed_embeddings = []
+            for embedding in embeddings:
+                if len(embedding) < self.embedding_dim:
+                    # Pad with zeros
+                    embedding.extend([0.0] * (self.embedding_dim - len(embedding)))
+                elif len(embedding) > self.embedding_dim:
+                    # Truncate
+                    embedding = embedding[:self.embedding_dim]
+                processed_embeddings.append(embedding)
+            
+            logger.info(f"Created {len(processed_embeddings)} embeddings")
+            return processed_embeddings
+            
+        except Exception as e:
+            logger.error(f"Error creating embeddings: {str(e)}")
+            # Fallback to random embeddings (for testing)
+            return [[0.0] * self.embedding_dim for _ in texts]
 
     def ingest_documents_from_directory(self, data_dir: str = "data", batch_size: int = 50):
         """Ingest documents from directory into Qdrant"""
@@ -257,16 +335,26 @@ class QdrantRAGPipeline:
         logger.info(f"Successfully ingested {total_uploaded} chunks from {len(documents)} documents")
         return total_uploaded
 
-    def similarity_search(self, query: str, limit: int = 5, score_threshold: float = 0.3) -> List[Dict[str, Any]]:
+    def similarity_search(self, query: str, limit: int = 5, score_threshold: float = 0.1) -> List[Dict[str, Any]]:
         """Search for similar documents in Qdrant"""
         try:
             # Create query embedding
-            query_embedding = self.embedding_model.encode([query])[0].tolist()
+            if not self.is_fitted:
+                logger.warning("Vectorizer not fitted, cannot search")
+                return []
+            
+            query_vector = self.vectorizer.transform([query]).toarray()[0].tolist()
+            
+            # Pad or truncate to exact dimension
+            if len(query_vector) < self.embedding_dim:
+                query_vector.extend([0.0] * (self.embedding_dim - len(query_vector)))
+            elif len(query_vector) > self.embedding_dim:
+                query_vector = query_vector[:self.embedding_dim]
             
             # Search in Qdrant
             search_results = self.client.search(
                 collection_name=self.collection_name,
-                query_vector=query_embedding,
+                query_vector=query_vector,
                 limit=limit,
                 score_threshold=score_threshold
             )
@@ -323,14 +411,6 @@ class QdrantRAGPipeline:
             logger.error(f"Error getting collection info: {str(e)}")
             return {}
 
-    def delete_collection(self):
-        """Delete the entire collection"""
-        try:
-            self.client.delete_collection(self.collection_name)
-            logger.info(f"Deleted collection: {self.collection_name}")
-        except Exception as e:
-            logger.error(f"Error deleting collection: {str(e)}")
-
     def clear_collection(self):
         """Clear all points from the collection"""
         try:
@@ -343,27 +423,5 @@ class QdrantRAGPipeline:
         except Exception as e:
             logger.error(f"Error clearing collection: {str(e)}")
 
-if __name__ == "__main__":
-    # Example usage
-    try:
-        rag = QdrantRAGPipeline()
-        
-        # Get collection info
-        info = rag.get_collection_info()
-        print(f"Collection info: {info}")
-        
-        # Ingest documents if the collection is empty
-        if info.get('points_count', 0) == 0:
-            print("Collection is empty. Ingesting documents...")
-            count = rag.ingest_documents_from_directory("data")
-            print(f"Ingested {count} document chunks")
-        
-        # Test search
-        query = "What are the requirements for student visa?"
-        context = rag.get_context_for_query(query, max_chunks=3)
-        print(f"\nQuery: {query}")
-        print(f"\nRelevant context:\n{context}")
-        
-    except Exception as e:
-        print(f"Error: {str(e)}")
-        print("Make sure to set QDRANT_URL and QDRANT_API_KEY environment variables")
+# Alias for backward compatibility
+QdrantRAGPipeline = LightweightRAGPipeline
