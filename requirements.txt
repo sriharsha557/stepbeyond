@@ -1,26 +1,44 @@
-# FINAL WORKING COMBINATION - All dependency conflicts resolved
-# Based on analysis of all known issues and working examples from Jan 2025
+# Updated dependencies for Render deployment with Qdrant
+# Tested combination that works together - January 2025
 
-# FastAPI with compatible version (avoids typer conflict)
-fastapi==0.110.0  # Version before the typer >=0.12.3 requirement
-uvicorn[standard]==0.24.0
-python-multipart==0.0.6
-python-dotenv==1.0.0
+# Core web framework
+fastapi==0.115.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.7
+python-dotenv==1.0.1
 
-# Pydantic - use version compatible with both FastAPI 0.110.0 and CrewAI
-pydantic==2.4.2
+# Streamlit for UI
+streamlit==1.31.1
 
-# CrewAI - Latest stable that works with older FastAPI
-crewai==0.193.0
+# Qdrant vector database client
+qdrant-client==1.7.3
 
-# Document processing - minimal versions that work
+# Document processing
 PyPDF2==3.0.1
+python-docx==1.1.0
 
-# Vector search - use version that actually exists and works
-faiss-cpu==1.8.0
+# Text processing and embeddings
+sentence-transformers==2.3.1
+transformers==4.37.2
 
-# Sentence transformers - compatible version
-sentence-transformers==2.2.2
+# HTTP client for API calls
+httpx==0.26.0
+requests==2.31.0
 
-# Core dependencies - let other packages manage numpy/requests
-# (Don't pin numpy - let sentence-transformers/faiss handle it)
+# Data processing
+numpy==1.24.4
+pandas==2.1.4
+
+# LLM integration (Groq)
+groq==0.4.2
+
+# Text splitting and processing
+langchain-text-splitters==0.0.1
+langchain-core==0.1.23
+
+# Utility libraries
+pydantic==2.5.3
+typing-extensions==4.9.0
+
+# Logging and monitoring
+loguru==0.7.2
